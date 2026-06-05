@@ -44,13 +44,14 @@ getIdentity = function () {
 }
 
 async function get_data(callback) {
-  const requiredData = ['location', 'assetid', 'directoryid', 'useremail', 'UnblockPatterns'];
+  const requiredData = ['location', 'assetid', 'directoryid', 'useremail', 'UnblockPatterns', 'serial'];
   const promises = [
     getEnterpriseAttribute('getDeviceAnnotatedLocation'), // 0 location
     getEnterpriseAttribute('getDeviceAssetId'), // 1 asset id
     getEnterpriseAttribute('getDirectoryDeviceId'), // 2 directory api id
     getIdentity(), // 3 user email
     getExtensionPolicy('UnblockPatterns'), // 4 Policy UnblockPatterns
+    getEnterpriseAttribute('getDeviceSerialNumber'), // 5 device serial (TCSS fork)
   ];
 
   const results = await Promise.allSettled(promises);
@@ -76,6 +77,9 @@ async function get_data(callback) {
           break;
         case 'UnblockPatterns':
           data.UnblockPatterns = value.UnblockPatterns
+          break;
+        case 'serial':
+          data.serial = value;
           break;
       }
     }
@@ -116,7 +120,7 @@ function checkDeviceAuthorization(data) {
   }
 
   console.log('Device does not have this user as allowed, BLOCKING ALL WEBSITES!');
-  applyBlockingRule(data.location.join("; "));
+     applyBlockingRule(data.location.join("; "), data.serial);
 
 }
 
@@ -142,12 +146,12 @@ chrome.storage.onChanged.addListener(function (changes, areaName) {
   }
 })
 
-function applyBlockingRule(assigned_user) {
+ function applyBlockingRule(assigned_user, serial) {
   removeAllCustomRules()
   getExtensionPolicy("BlockPage").then((BlockPage) => {
     rules = []
     // Set default options for redirect
-    redirect = { extensionPath: `/blocked.html?user=${assigned_user}` }
+    redirect = { extensionPath: `/blocked.html?user=${assigned_user}${serial ? "&serial=" + encodeURIComponent(serial) : ""}` }
     condition = {
       urlFilter: "*://*/*",
       resourceTypes: [
@@ -159,6 +163,7 @@ function applyBlockingRule(assigned_user) {
       // Append the user parameter, Redirect to the URL, Add the domain to the exclusion listing
       BlockPageURL = new URL(BlockPage.BlockPage)
       BlockPageURL.searchParams.append("user", assigned_user)
+      if (serial) BlockPageURL.searchParams.append("serial", serial)
       redirect = { url: BlockPageURL.toString() }
       excludedRequestDomains = []
       excludedRequestDomains.push(BlockPageURL.hostname)
